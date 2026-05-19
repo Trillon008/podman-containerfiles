@@ -1,5 +1,7 @@
 FROM registry.access.redhat.com/ubi10/go-toolset:10.1 AS builder
 
+ARG RELEASE=1.0.0
+
 WORKDIR /src
 
 COPY go.mod main.go ./

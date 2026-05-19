@@ -1,5 +1,7 @@
 FROM registry.access.redhat.com/ubi10/ubi-minimal as builder
 
+ARG RELEASE=1.2.0
+
 RUN set -ex; \
     microdnf install -y wget tar gzip; \
     mkdir /app; \

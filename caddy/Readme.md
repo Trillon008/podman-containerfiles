@@ -33,6 +33,11 @@ Required OVH credentials must be provided through environment variables, typical
 
 ## Healthcheck
 
-The image includes a reusable HTTP probe binary and defines a `HEALTHCHECK` against Caddy's local admin API:
+The image includes a reusable HTTP probe binary.
 
+For OCI images with Podman, the healthcheck is configured at runtime in the Quadlet instead of in the image itself.
+
+The Quadlet example uses:
+
+- `HealthCmd=/usr/local/bin/healthcheck`
 - `PROBE_URL=http://127.0.0.1:2019/config/`

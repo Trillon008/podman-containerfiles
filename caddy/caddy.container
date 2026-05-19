@@ -6,6 +6,7 @@ After=network-online.target
 Label=app=caddy
 ContainerName=caddy
 EnvironmentFile=caddy.env
+Environment=PROBE_URL=http://127.0.0.1:2019/config/
 
 UserNS=keep-id
 AddCapability=CAP_NET_BIND_SERVICE
@@ -13,11 +14,18 @@ AddCapability=CAP_NET_BIND_SERVICE
 Volume=%h/containers/caddy/etc:/caddy/etc:z
 Volume=%h/containers/caddy/var:/caddy/var:z
 
+Network=podman
 PublishPort=80:80/tcp
 PublishPort=443:443/tcp
 
-Image=localhost/localhost/caddy:2.10.2
+Image=ghcr.io/trillon008/caddy:2.11.3
 Exec=run --config /caddy/etc/Caddyfile --adapter caddyfile
+
+HealthCmd=/usr/local/bin/healthcheck
+HealthInterval=30s
+HealthTimeout=3s
+HealthStartPeriod=10s
+HealthRetries=3
 
 [Service]
 TimeoutStartSec=300

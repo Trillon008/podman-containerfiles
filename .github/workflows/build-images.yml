@@ -36,27 +36,41 @@ jobs:
           python3 <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
           workspace = Path(".")
           owner = os.environ["GITHUB_REPOSITORY_OWNER"].lower()
+          release_pattern = re.compile(r"^\s*ARG\s+RELEASE\s*=\s*([^\s#]+)\s*$")
 
+          def release_for(containerfile: Path) -> str:
+            for line in containerfile.read_text(encoding="utf-8").splitlines():
+              match = release_pattern.match(line)
+              if match:
+                return match.group(1).strip().strip('"').strip("'")
+            raise SystemExit(f"Missing ARG RELEASE=... in {containerfile}")
+
+          healthcheck_release = None
           images = []
           for containerfile in sorted(workspace.glob("*/Containerfile")):
             name = containerfile.parent.name
+            release = release_for(containerfile)
             if name == "healthcheck":
+              healthcheck_release = release
               continue
             images.append({
               "name": name,
               "context": str(containerfile.parent),
               "containerfile": str(containerfile),
-              "tags": "latest",
+              "tags": release,
             })
 
           github_output = Path(os.environ["GITHUB_OUTPUT"])
+          if healthcheck_release is None:
+            raise SystemExit("Missing healthcheck/Containerfile or ARG RELEASE for healthcheck")
           with github_output.open("a", encoding="utf-8") as fh:
             fh.write(f"owner={owner}\n")
-            fh.write("healthcheck_tags=1.0.0\n")
+            fh.write(f"healthcheck_tags={healthcheck_release}\n")
             fh.write(f"matrix={json.dumps({'include': images})}\n")
           PY
 
