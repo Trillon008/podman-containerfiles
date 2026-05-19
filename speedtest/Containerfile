@@ -1,0 +1,14 @@
+FROM registry.access.redhat.com/ubi10/ubi-minimal as builder
+
+RUN set -ex; \
+    microdnf install -y wget tar gzip; \
+    mkdir /app; \
+    wget -qO-  https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz | tar xzf - -C /app
+
+
+FROM registry.access.redhat.com/ubi10/ubi-micro
+
+COPY --from=builder /app/speedtest /bin
+COPY --from=builder /etc/ssl/cert.pem /etc/ssl/cert.pem
+
+ENTRYPOINT ["/bin/speedtest", "--accept-license", "--accept-gdpr"]

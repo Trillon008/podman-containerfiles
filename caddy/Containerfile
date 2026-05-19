@@ -1,0 +1,36 @@
+FROM ghcr.io/trillon008/healthcheck:1.0.0 AS healthcheck
+FROM registry.access.redhat.com/ubi10/go-toolset:10.1 AS builder
+
+ARG CADDY_VERSION=v2.10.0
+ARG XCADDY_VERSION=v0.4.4
+ARG CADDY_OVH_VERSION=v1.1.0
+ARG UID=1000
+
+# Build caddy with the OVH DNS module.
+RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@${XCADDY_VERSION}
+RUN "$(go env GOPATH)/bin/xcaddy" build ${CADDY_VERSION} \
+    --with github.com/caddy-dns/ovh@${CADDY_OVH_VERSION}
+
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.1
+
+RUN microdnf install -y ca-certificates tzdata && \
+    microdnf clean all
+
+COPY --from=builder /opt/app-root/src/caddy /usr/bin/caddy
+COPY --from=healthcheck /healthcheck /usr/local/bin/healthcheck
+
+RUN mkdir -p /caddy/etc  /caddy/var && \
+    chown -R 1000:1000 /caddy
+
+WORKDIR /caddy
+
+EXPOSE 80 443 2019
+
+USER ${UID}:${UID}
+
+ENV PROBE_URL=http://127.0.0.1:2019/config/
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["/usr/local/bin/healthcheck"]
+
+ENTRYPOINT ["/usr/bin/caddy"]
+CMD ["run", "--config", "/caddy/etc/Caddyfile", "--adapter", "caddyfile"]

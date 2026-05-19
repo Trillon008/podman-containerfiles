@@ -1,0 +1,136 @@
+name: Build container images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/Containerfile"
+      - ".github/workflows/build-images.yml"
+  pull_request:
+    paths:
+      - "**/Containerfile"
+      - ".github/workflows/build-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  discover:
+    name: Discover images
+    runs-on: ubuntu-latest
+    outputs:
+      owner: ${{ steps.discover.outputs.owner }}
+      healthcheck_tags: ${{ steps.discover.outputs.healthcheck_tags }}
+      matrix: ${{ steps.discover.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Discover Containerfiles
+        id: discover
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          workspace = Path(".")
+          owner = os.environ["GITHUB_REPOSITORY_OWNER"].lower()
+
+          images = []
+          for containerfile in sorted(workspace.glob("*/Containerfile")):
+            name = containerfile.parent.name
+            if name == "healthcheck":
+              continue
+            images.append({
+              "name": name,
+              "context": str(containerfile.parent),
+              "containerfile": str(containerfile),
+              "tags": "latest",
+            })
+
+          github_output = Path(os.environ["GITHUB_OUTPUT"])
+          with github_output.open("a", encoding="utf-8") as fh:
+            fh.write(f"owner={owner}\n")
+            fh.write("healthcheck_tags=1.0.0\n")
+            fh.write(f"matrix={json.dumps({'include': images})}\n")
+          PY
+
+  build-healthcheck:
+    name: Build healthcheck
+    runs-on: ubuntu-latest
+    needs: discover
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build healthcheck image
+        id: build-healthcheck
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ needs.discover.outputs.owner }}/healthcheck
+          context: ./healthcheck
+          containerfiles: ./healthcheck/Containerfile
+          tags: ${{ needs.discover.outputs.healthcheck_tags }}
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push healthcheck image
+        if: github.event_name != 'pull_request'
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ needs.discover.outputs.owner }}/healthcheck
+          tags: ${{ needs.discover.outputs.healthcheck_tags }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+  build-images:
+    name: Build ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    needs:
+      - discover
+      - build-healthcheck
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ needs.discover.outputs.owner }}/${{ matrix.name }}
+          context: ${{ matrix.context }}
+          containerfiles: ${{ matrix.containerfile }}
+          tags: ${{ matrix.tags }}
+
+      - name: Push image
+        if: github.event_name != 'pull_request'
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ needs.discover.outputs.owner }}/${{ matrix.name }}
+          tags: ${{ matrix.tags }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
