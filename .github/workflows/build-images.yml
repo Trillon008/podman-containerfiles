@@ -80,7 +80,7 @@ jobs:
     needs: discover
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Build healthcheck image
         id: build-healthcheck
